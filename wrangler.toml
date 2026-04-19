@@ -1,0 +1,6 @@
+name = "invoice-pdf-splitter"
+compatibility_date = "2024-04-19"
+pages_build_output_dir = "dist"
+
+[vars]
+# Add environment variables here if needed
