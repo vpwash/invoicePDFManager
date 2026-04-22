@@ -56,32 +56,68 @@ async function performOCR(pdfPage, onProgress) {
 }
 
 /**
- * Extracts the best vendor match from text using Fuse.js
+ * Normalizes a string for comparison: lowercase, collapse whitespace, remove punctuation.
+ */
+function normalize(str) {
+  return str.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Extracts the best vendor match from text.
+ * Strategy:
+ *   1. Fast, normalized substring scan — reliable for multi-word names anywhere in the page.
+ *   2. Fuzzy match on extracted text tokens — last resort for OCR drift / abbreviations.
  */
 export function identifyVendor(text, vendorList) {
   if (!text || !vendorList.length) return 'UnknownVendor';
 
-  // 1. Try exact prefix match first (very common in invoice headers)
-  const cleanText = text.trim();
+  const normalizedText = normalize(text);
+
+  // 1. Normalized substring scan (catches "Henry Schein", "Boston Scientific", etc.)
   for (const vendor of vendorList) {
-    if (cleanText.toLowerCase().startsWith(vendor.toLowerCase())) {
-      console.log(`Priority Match: Found "${vendor}" at start of text.`);
+    if (normalizedText.includes(normalize(vendor))) {
+      console.log(`Substring Match: Found "${vendor}" in page text.`);
       return vendor;
     }
   }
 
-  // 2. Fallback to tuned fuzzy matching
-  const fuse = new Fuse(vendorList.map(v => ({ name: v })), {
+  // 2. Fallback: fuzzy match against individual words/tokens in the text
+  //    (avoids matching the whole blob, which produces garbage scores)
+  const tokens = normalizedText.split(/\s+/).filter(t => t.length > 2);
+  // Build bigrams and trigrams to help with multi-word names
+  const ngrams = [...tokens];
+  for (let i = 0; i < tokens.length - 1; i++) {
+    ngrams.push(`${tokens[i]} ${tokens[i + 1]}`);
+  }
+  for (let i = 0; i < tokens.length - 2; i++) {
+    ngrams.push(`${tokens[i]} ${tokens[i + 1]} ${tokens[i + 2]}`);
+  }
+
+  const fuse = new Fuse(ngrams.map(n => ({ name: n })), {
     keys: ['name'],
-    threshold: 0.5, // slightly more lenient
-    ignoreLocation: true, // find the vendor anywhere in the text
-    minMatchCharLength: 2,
+    threshold: 0.3,
+    ignoreLocation: true,
+    minMatchCharLength: 3,
     includeScore: true
   });
 
-  const result = fuse.search(text);
-  
-  return result.length > 0 ? result[0].item.name : 'UnknownVendor';
+  let bestVendor = null;
+  let bestScore = Infinity;
+
+  for (const vendor of vendorList) {
+    const result = fuse.search(normalize(vendor));
+    if (result.length > 0 && result[0].score < bestScore) {
+      bestScore = result[0].score;
+      bestVendor = vendor;
+    }
+  }
+
+  if (bestVendor) {
+    console.log(`Fuzzy Match: Found "${bestVendor}" (score: ${bestScore.toFixed(3)}).`);
+    return bestVendor;
+  }
+
+  return 'UnknownVendor';
 }
 
 /**

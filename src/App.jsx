@@ -8,7 +8,7 @@ import { processPDF } from './utils/pdfProcessor';
 function App() {
   const [vendors, setVendors] = useState(() => {
     const saved = localStorage.getItem('known_vendors');
-    return saved ? JSON.parse(saved) : ['Amazon', 'Microsoft', 'Adobe', 'Zoom', 'Slack'];
+    return saved ? JSON.parse(saved) : ['Henry Schein', 'Linde', 'McKesson', 'Julie Sifford', 'Boston Scientific'];
   });
   
   const [isProcessing, setIsProcessing] = useState(false);

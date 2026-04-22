@@ -38,10 +38,18 @@ export async function processPDF(file, vendorList, onProgress) {
     const date = identifyDate(text);
 
     const startsWithInvoiceLabel = /^(?:Invoice|Order|Bill|Statement)\s*(?:#|No|Number)?\b/i.test(text.trim().substring(0, 100));
-    
-    const isNewVendor = currentInvoice && currentInvoice.vendor !== vendor;
-    const isNewDate = currentInvoice && currentInvoice.date !== date;
-    const shouldSplit = !currentInvoice || isNewVendor || isNewDate || (startsWithInvoiceLabel && currentInvoice.pages.length > 0);
+
+    // Only split on a *positive* vendor identification that differs from current.
+    // If the page returned UnknownVendor it is almost certainly a continuation
+    // (e.g. page 2 of a McKesson invoice with no company header).
+    const isPositiveVendor = vendor !== 'UnknownVendor';
+    const isNewVendor = currentInvoice && isPositiveVendor && currentInvoice.vendor !== vendor;
+
+    // Similarly, only treat a date change as a split signal when we also have a
+    // confirmed vendor, so that a dateless continuation page doesn't cause a false split.
+    const isNewDate = currentInvoice && isPositiveVendor && date !== 'NoDate' && currentInvoice.date !== date;
+
+    const shouldSplit = !currentInvoice || isNewVendor || isNewDate || (startsWithInvoiceLabel && isPositiveVendor && currentInvoice.pages.length > 0);
 
     if (shouldSplit) {
       if (currentInvoice) results.push(currentInvoice);
